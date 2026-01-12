@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>觀光英語期末考複習挑戰 (連線版)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- 引入 Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 全域變數以供非 module script 使用
+        window.firebaseModules = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit
+        };
+        
+        // 發出事件通知模組已加載
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6; /* Gray-100 */
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .selected-card {
+            background-color: #3b82f6 !important;
+            color: white !important;
+            border-color: #2563eb !important;
+        }
+        .matched-card {
+            background-color: #10b981 !important;
+            color: white !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        .wrong-anim {
+            animation: shake 0.5s;
+        }
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-gray-800">
+
+    <!-- 導航列 -->
+    <nav class="bg-indigo-600 text-white p-4 shadow-md z-10">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fas fa-plane-departure"></i> 觀光英語期末考複習
+            </h1>
+            <div id="userInfoDisplay" class="hidden text-sm font-medium bg-indigo-700 px-3 py-1 rounded-full border border-indigo-500 shadow-sm">
+                <!-- 用戶資訊 -->
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要內容區 -->
+    <main class="flex-grow container mx-auto p-4 flex flex-col items-center justify-center relative">
+        
+        <!-- Loading Overlay -->
+        <div id="globalLoader" class="fixed inset-0 bg-white bg-opacity-90 z-50 flex flex-col items-center justify-center hidden">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-600 font-medium">連線排行榜系統中...</p>
+        </div>
+
+        <!-- 頁面 1: 登入畫面 -->
+        <div id="loginPage" class="w-full max-w-md bg-white rounded-xl shadow-xl p-8 fade-in flex flex-col justify-between border-t-4 border-indigo-500">
+            <div>
+                <div class="text-center mb-6">
+                    <div class="inline-block p-4 rounded-full bg-indigo-100 text-indigo-600 mb-4 shadow-sm">
+                        <i class="fas fa-passport text-3xl"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">考生登入</h2>
+                    <p class="text-gray-500 mt-2 text-sm">輸入資料以進入全班排行榜</p>
+                </div>
+                
+                <form id="loginForm" class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">班級 (Class)</label>
+                        <input type="text" id="inputClass" required placeholder="例如: 105" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">學號 (ID)</label>
+                        <input type="text" id="inputId" required placeholder="例如: 114001" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">姓名 (Name)</label>
+                        <input type="text" id="inputName" required placeholder="例如: 林小華" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-gray-50">
+                    </div>
+                    <button type="submit" id="loginBtn" disabled class="w-full bg-gray-400 text-white font-bold py-3 rounded-lg shadow cursor-not-allowed transition flex justify-center items-center">
+                        <span id="loginBtnText">系統連線中...</span>
+                    </button>
+                </form>
+            </div>
+            
+            <div class="mt-8 border-t pt-4 text-center">
+                 <p class="text-xs text-gray-400">樹德家商 114學年度第一學期期末考複習用</p>
+            </div>
+        </div>
+
+        <!-- 頁面 2: 遊戲選單 -->
+        <div id="menuPage" class="w-full max-w-5xl hidden fade-in">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">
+                <span class="border-b-4 border-indigo-400 pb-1">選擇複習模式</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 遊戲 1: 單字配對 -->
+                <div onclick="startGame('match')" class="bg-white p-6 rounded-xl shadow-lg cursor-pointer card-hover border-t-4 border-teal-500 text-center group transition-all hover:bg-teal-50">
+                    <div class="w-16 h-16 mx-auto bg-teal-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-object-group text-teal-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2 text-gray-800">字彙配對</h3>
+                    <p class="text-gray-600 text-sm mb-4">第一大題複習：<br>shampoo, umbrella, briefcase...</p>
+                    <span class="text-teal-600 font-semibold text-sm">START <i class="fas fa-arrow-right ml-1"></i></span>
+                </div>
+                <!-- 遊戲 2: 文意填空 -->
+                <div onclick="startGame('cloze')" class="bg-white p-6 rounded-xl shadow-lg cursor-pointer card-hover border-t-4 border-amber-500 text-center group transition-all hover:bg-amber-50">
+                    <div class="w-16 h-16 mx-auto bg-amber-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-spell-check text-amber-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2 text-gray-800">文意字彙</h3>
+                    <p class="text-gray-600 text-sm mb-4">第二大題複習：<br>選擇正確的單字填入句子中</p>
+                    <span class="text-amber-600 font-semibold text-sm">START <i class="fas fa-arrow-right ml-1"></i></span>
+                </div>
+                <!-- 遊戲 3: 綜合測驗 -->
+                <div onclick="startGame('quiz')" class="bg-white p-6 rounded-xl shadow-lg cursor-pointer card-hover border-t-4 border-rose-500 text-center group transition-all hover:bg-rose-50">
+                    <div class="w-16 h-16 mx-auto bg-rose-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-list-ul text-rose-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2 text-gray-800">綜合測驗</h3>
+                    <p class="text-gray-600 text-sm mb-4">第三、四大題複習：<br>單字選擇與克漏字練習</p>
+                    <span class="text-rose-600 font-semibold text-sm">START <i class="fas fa-arrow-right ml-1"></i></span>
+                </div>
+            </div>
+            
+            <div class="mt-12 text-center">
+                <button onclick="showLeaderboard()" class="bg-gray-800 hover:bg-gray-900 text-white px-8 py-3 rounded-full shadow-lg inline-flex items-center transition transform hover:-translate-y-1">
+                    <i class="fas fa-trophy text-yellow-400 mr-2"></i> 查看全班排行榜
+                </button>
+            </div>
+        </div>
+
+        <!-- 遊戲區域: 單字配對 -->
+        <div id="gameMatch" class="w-full max-w-5xl hidden fade-in">
+            <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-lg shadow-sm">
+                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-medium px-3 py-1 rounded hover:bg-gray-100 transition">
+                    <i class="fas fa-arrow-left mr-1"></i> 放棄
+                </button>
+                <h2 class="text-lg font-bold text-teal-700">字彙配對 (Vocabulary Matching)</h2>
+                <div class="text-xl font-bold text-gray-700">Score: <span id="matchScore" class="text-teal-600">0</span></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-6 border-2 border-teal-100">
+                <div id="matchGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    <!-- 卡片將由 JS 生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 遊戲區域: 通用問答 (填空/選擇) -->
+        <div id="gameQuiz" class="w-full max-w-3xl hidden fade-in">
+            <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-lg shadow-sm">
+                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-medium px-3 py-1 rounded hover:bg-gray-100 transition">
+                    <i class="fas fa-arrow-left mr-1"></i> 放棄
+                </button>
+                <div class="text-lg font-bold text-gray-700">
+                    題號: <span id="currentQ" class="text-indigo-600 text-xl">1</span> / <span id="totalQ">10</span>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+                <div class="bg-indigo-50 p-8 border-b border-indigo-100 relative">
+                    <div class="absolute top-0 left-0 bg-indigo-200 text-indigo-800 text-xs px-2 py-1 rounded-br-lg font-bold" id="qTypeLabel">題目類型</div>
+                    <p id="questionText" class="text-xl text-gray-800 font-medium leading-relaxed font-serif"></p>
+                </div>
+                <div id="optionsContainer" class="p-6 space-y-3 bg-gray-50">
+                    <!-- 選項將由 JS 生成 -->
+                </div>
+            </div>
+            <div id="quizFeedback" class="mt-4 text-center font-bold text-xl min-h-[2rem] transition-all duration-300"></div>
+        </div>
+
+        <!-- 頁面 3: 結算與排行榜 -->
+        <div id="resultPage" class="w-full max-w-4xl hidden fade-in">
+            <div class="text-center mb-8">
+                <div class="inline-block p-4 rounded-full bg-yellow-100 text-yellow-600 mb-2 animate-bounce">
+                    <i class="fas fa-star text-4xl"></i>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800">挑戰完成!</h2>
+                <p class="text-gray-600 mt-2">本次得分</p>
+                <div class="text-5xl font-extrabold text-indigo-600 my-2" id="finalScore">0</div>
+                <button onclick="backToMenu()" class="mt-4 bg-gray-700 hover:bg-gray-800 text-white px-6 py-2 rounded-lg shadow transition">
+                    <i class="fas fa-redo mr-1"></i> 回主選單
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-[500px]">
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 flex justify-between items-center text-white shadow-md">
+                    <h3 class="text-xl font-bold flex items-center">
+                        <i class="fas fa-trophy text-yellow-400 mr-2"></i> 即時排行榜 (Top 50)
+                    </h3>
+                    <div class="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
+                        <i class="fas fa-sync-alt fa-spin mr-1"></i> Live Updating
+                    </div>
+                </div>
+                
+                <div class="flex-grow overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 bg-gray-50 shadow-sm z-10">
+                            <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="p-3 w-16 text-center">排名</th>
+                                <th class="p-3">姓名 (班級)</th>
+                                <th class="p-3">測驗模式</th>
+                                <th class="p-3 text-right">分數</th>
+                                <th class="p-3 text-right hidden sm:table-cell">時間</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody" class="text-gray-700 divide-y divide-gray-100 bg-white">
+                            <!-- 排行榜資料 -->
+                            <tr><td colspan="5" class="p-8 text-center text-gray-400">載入中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-3 bg-gray-50 border-t text-right">
+                     <button onclick="exportToExcel()" class="text-green-600 hover:text-green-700 text-sm font-medium transition">
+                        <i class="fas fa-file-excel mr-1"></i> 匯出成績單
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-gray-800 text-gray-400 py-4 text-center text-sm mt-auto">
+        <p>題目來源: 樹德家商 114學年度第一學期 105 觀光英語會話</p>
+    </footer>
+
+    <!-- JavaScript 邏輯 -->
+    <script>
+        // --- 1. 資料庫 (從 PDF 提取的考題) ---
+        // 第一大題：字彙配對
+        const vocabMatchData = [
+            { en: "shampoo", ch: "洗髮精" },
+            { en: "umbrella", ch: "雨傘" },
+            { en: "briefcase", ch: "公事包" },
+            { en: "backpack", ch: "背包" },
+            { en: "tissue paper", ch: "面紙" },
+            { en: "jeans", ch: "牛仔褲" },
+            { en: "shirt", ch: "襯衫" },
+            { en: "shorts", ch: "短褲" },
+            { en: "sneakers", ch: "球鞋" },
+            { en: "hat", ch: "帽子" },
+            { en: "coin", ch: "硬幣" },
+            { en: "cellphone", ch: "手機" },
+            { en: "digital camera", ch: "數位相機" },
+            { en: "tablet", ch: "平板電腦" },
+            { en: "adapter", ch: "轉接頭" },
+            { en: "charger", ch: "充電器" },
+            { en: "swimsuit", ch: "泳裝" },
+            { en: "socks", ch: "襪子" },
+            { en: "toothpaste", ch: "牙膏" },
+            { en: "metro card", ch: "捷運卡" }
+        ];
+
+        // 第二大題：字彙填空 (Fill-in)
+        // 選項: change, power bank, lotion, sunblock, magazine, coat, sweater, purse, soap, map
+        const fillInData = [
+            { 
+                q: "My phone is running out of battery. Can I borrow your _____ to charge it?", 
+                a: "power bank", 
+                opts: ["power bank", "adapter", "charger", "change"] 
+            },
+            { 
+                q: "Don't forget to put on _____ before going to the beach, or you might get a sunburn.", 
+                a: "sunblock", 
+                opts: ["sunblock", "lotion", "soap", "make-up"] 
+            },
+            { 
+                q: "I want to buy a drink from the vending machine, but I don't have any small _____.", 
+                a: "change", 
+                opts: ["change", "coin", "bill", "money"] 
+            },
+            { 
+                q: "To pass the time on the flight, she bought a fashion _____ at the airport bookstore.", 
+                a: "magazine", 
+                opts: ["magazine", "tablet", "newspaper", "book"] 
+            },
+            { 
+                q: "Your skin looks very dry in the winter. You should apply some _____ to keep it soft.", 
+                a: "lotion", 
+                opts: ["lotion", "soap", "water", "sunblock"] 
+            },
+            { 
+                q: "It is freezing outside today. You should wear your heavy _____ to keep warm.", 
+                a: "coat", 
+                opts: ["coat", "shirt", "shorts", "hat"] 
+            },
+            { 
+                q: "We are lost. Let's look at the _____ to find the way to the train station.", 
+                a: "map", 
+                opts: ["map", "phone", "sign", "watch"] 
+            },
+            { 
+                q: "Please wash your hands with _____ and water before you eat dinner.", 
+                a: "soap", 
+                opts: ["soap", "lotion", "tissue", "shampoo"] 
+            },
+            { 
+                q: "My mother forgot her _____ at home, so she couldn't pay for the groceries.", 
+                a: "purse", 
+                opts: ["purse", "bag", "pocket", "coat"] 
+            },
+            { 
+                q: "I like wearing this wool _____ in winter because it is very soft and comfortable.", 
+                a: "sweater", 
+                opts: ["sweater", "shirt", "jeans", "coat"] 
+            }
+        ];
+
+        // 第三大題 & 第四大題：字彙選擇與克漏字 (Quiz)
+        const multipleChoiceData = [
+            // Section III
+            { q: "Please walk _____ the full body scanner.", a: "through", opts: ["against", "before", "above", "through"] },
+            { q: "Kyle and Kim decided to bring one large bag on their trip instead of two _____ ones.", a: "separate", opts: ["invited", "separate", "boarding", "bridge"] },
+            { q: "Passengers will be allowed to _____ in less than 30 minutes.", a: "board", opts: ["boarded", "board", "boards", "boarding"] },
+            { q: "All of the passengers _____ to the aircraft.", a: "traveled across the jet bridge", opts: ["claim ticket", "status monitor", "traveled across the jet bridge", "metal detector"] }, // Note: Adjusted based on typical usage, Q34 context seems to ask for a noun phrase to complete "traveled across the [noun] to the aircraft" or similar. Based on options, "jet bridge" is the noun.
+            // Re-reading PDF Q34: "All of the passengers ... to the aircraft." Options A,B,C,D are nouns. The question likely is "All of the passengers traveled across the _____ to the aircraft."
+            { q: "All of the passengers traveled across the _____ to the aircraft.", a: "jet bridge", opts: ["claim ticket", "status monitor", "jet bridge", "metal detector"] },
+            { q: "This is the final boarding _____ for passengers of Flight 1080 to Moscow.", a: "call", opts: ["baggage", "pass", "call", "delay"] },
+            { q: "Jamie _____ the envelope with some tape.", a: "sealed", opts: ["sealed", "spared", "handed", "delayed"] },
+            { q: "Carla said she was _____ late, and she probably won't get here until noon.", a: "running", opts: ["having", "walking", "running", "checking"] },
+            { q: "How many bags are you _____?", a: "checking", opts: ["passing", "inviting", "checking", "boarding"] },
+            { q: "Please put a luggage _____ on each of your suitcases.", a: "tag", opts: ["cart", "gate", "scale", "tag"] },
+            { q: "Olive will need a luggage _____ to carry all of her bags.", a: "trolley", opts: ["passenger", "gel", "passport", "trolley"] },
+            // Section IV (Cloze)
+            { q: "Everything started out fine, but halfway to the airport, I _____ that I had left my passport at home!", a: "discovered", opts: ["discovered", "discover", "discovering", "was discovered"] },
+            { q: "I had _____ my passport at home!", a: "left", opts: ["left", "passed", "handed", "had"] },
+            { q: "Peter put the suitcase on the _____.", a: "scale", opts: ["pass", "tag", "scale", "gate"] },
+            { q: "The clerk gave us a baggage claim _____.", a: "ticket", opts: ["bridge", "ticket", "counter", "monitor"] },
+            { q: "We made it to our flight with time _____.", a: "to spare", opts: ["spared", "being spared", "sparing", "to spare"] }
+        ];
+
+        // --- 2. 狀態管理 ---
+        let currentUser = { class: "", id: "", name: "" };
+        let currentMode = "";
+        let currentScore = 0;
+        let quizState = { questions: [], currentIndex: 0 };
+        let app, db, auth;
+        // FIX: 使用系統環境變數中的 App ID，若無則使用預設值
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- 3. Firebase 初始化 ---
+        window.addEventListener('firebase-ready', async () => {
+            const { initializeApp, getAuth, signInAnonymously, getFirestore, signInWithCustomToken } = window.firebaseModules;
+            
+            // 使用環境提供的配置
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.error("Firebase config not found. Leaderboard will not work.");
+                document.getElementById('loginBtnText').innerText = "系統離線模式 (無排行榜)";
+                document.getElementById('loginBtn').disabled = false;
+                document.getElementById('loginBtn').classList.remove('bg-gray-400', 'cursor-not-allowed');
+                document.getElementById('loginBtn').classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                return;
+            }
+
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                // Auth success
+                document.getElementById('loginBtnText').innerHTML = '開始挑戰 <i class="fas fa-arrow-right ml-2"></i>';
+                document.getElementById('loginBtn').disabled = false;
+                document.getElementById('loginBtn').classList.remove('bg-gray-400', 'cursor-not-allowed');
+                document.getElementById('loginBtn').classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                
+            } catch (error) {
+                console.error("Auth failed", error);
+                document.getElementById('loginBtnText').innerText = "連線失敗，請重整";
+            }
+        });
+
+        // --- 4. 畫面切換與登入 ---
+        const screens = {
+            login: document.getElementById('loginPage'),
+            menu: document.getElementById('menuPage'),
+            match: document.getElementById('gameMatch'),
+            quiz: document.getElementById('gameQuiz'),
+            result: document.getElementById('resultPage')
+        };
+
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(el => el.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            currentUser.class = document.getElementById('inputClass').value.trim();
+            currentUser.id = document.getElementById('inputId').value.trim();
+            currentUser.name = document.getElementById('inputName').value.trim();
+            
+            if(!currentUser.class || !currentUser.id || !currentUser.name) return;
+
+            document.getElementById('userInfoDisplay').innerText = `${currentUser.class} ${currentUser.name}`;
+            document.getElementById('userInfoDisplay').classList.remove('hidden');
+            switchScreen('menu');
+        });
+
+        function backToMenu() {
+            switchScreen('menu');
+        }
+
+        // --- 5. 遊戲邏輯 ---
+
+        function startGame(mode) {
+            currentMode = mode;
+            currentScore = 0;
+            
+            if (mode === 'match') {
+                initMatchGame();
+                switchScreen('match');
+            } else if (mode === 'cloze') {
+                initQuizGame(fillInData, '文意填空', 10);
+                switchScreen('quiz');
+            } else if (mode === 'quiz') {
+                initQuizGame(multipleChoiceData, '綜合測驗', 15);
+                switchScreen('quiz');
+            }
+        }
+
+        // === Match Game ===
+        let matchSelected = null;
+        let matchPairsFound = 0;
+        
+        function initMatchGame() {
+            const grid = document.getElementById('matchGrid');
+            grid.innerHTML = "";
+            document.getElementById('matchScore').innerText = 0;
+            matchPairsFound = 0;
+            matchSelected = null;
+
+            // 取 10 對 (因為總共20對太多，每次隨機取10對玩)
+            let shuffledVocab = [...vocabMatchData].sort(() => 0.5 - Math.random()).slice(0, 10);
+            let cards = [];
+            
+            shuffledVocab.forEach((item, index) => {
+                cards.push({ id: index, type: 'en', text: item.en, matchId: index });
+                cards.push({ id: index, type: 'ch', text: item.ch, matchId: index });
+            });
+            cards.sort(() => 0.5 - Math.random());
+
+            cards.forEach(card => {
+                let cardEl = document.createElement('div');
+                cardEl.className = "bg-white border-2 border-teal-200 rounded-lg p-2 text-center cursor-pointer font-bold text-gray-700 h-24 flex items-center justify-center select-none transition duration-200 hover:bg-teal-50 text-sm md:text-base break-words w-full shadow-sm";
+                cardEl.innerText = card.text;
+                cardEl.dataset.matchId = card.matchId;
+                cardEl.dataset.type = card.type;
+                cardEl.onclick = () => handleCardClick(cardEl);
+                grid.appendChild(cardEl);
+            });
+        }
+
+        function handleCardClick(el) {
+            if (el.classList.contains('matched-card') || el.classList.contains('selected-card')) return;
+
+            if (!matchSelected) {
+                matchSelected = el;
+                el.classList.add('selected-card');
+            } else {
+                // Check match
+                if (matchSelected.dataset.matchId === el.dataset.matchId && matchSelected.dataset.type !== el.dataset.type) {
+                    el.classList.add('matched-card');
+                    matchSelected.classList.add('matched-card');
+                    currentScore += 10;
+                    document.getElementById('matchScore').innerText = currentScore;
+                    matchSelected = null;
+                    matchPairsFound++;
+                    if (matchPairsFound === 10) setTimeout(endGame, 1000);
+                } else {
+                    el.classList.add('bg-red-100', 'border-red-300');
+                    matchSelected.classList.add('wrong-anim');
+                    el.classList.add('wrong-anim');
+                    matchSelected.classList.remove('selected-card');
+                    let temp = matchSelected;
+                    matchSelected = null;
+                    setTimeout(() => {
+                        temp.classList.remove('wrong-anim');
+                        el.classList.remove('bg-red-100', 'border-red-300', 'wrong-anim');
+                    }, 500);
+                }
+            }
+        }
+
+        // === Quiz Game (Cloze & Multiple Choice) ===
+        function initQuizGame(sourceData, typeLabel, count) {
+            // 洗牌並取題
+            let questions = [...sourceData].sort(() => 0.5 - Math.random()).slice(0, count);
+            quizState.questions = questions;
+            quizState.currentIndex = 0;
+            currentScore = 0;
+            
+            document.getElementById('qTypeLabel').innerText = typeLabel;
+            document.getElementById('totalQ').innerText = questions.length;
+            renderQuestion();
+        }
+
+        function renderQuestion() {
+            if (quizState.currentIndex >= quizState.questions.length) {
+                endGame();
+                return;
+            }
+
+            let q = quizState.questions[quizState.currentIndex];
+            document.getElementById('currentQ').innerText = quizState.currentIndex + 1;
+            document.getElementById('questionText').innerText = q.q;
+            document.getElementById('quizFeedback').innerText = "";
+            document.getElementById('quizFeedback').className = "mt-4 text-center font-bold text-xl min-h-[2rem]";
+
+            const optContainer = document.getElementById('optionsContainer');
+            optContainer.innerHTML = "";
+
+            // 洗牌選項
+            let options = [...q.opts].sort(() => 0.5 - Math.random());
+
+            options.forEach(opt => {
+                let btn = document.createElement('button');
+                btn.className = "w-full text-left p-4 rounded-lg border-2 border-white shadow-sm bg-white hover:border-indigo-400 hover:bg-indigo-50 transition text-gray-700 font-medium text-lg";
+                btn.innerText = opt;
+                btn.onclick = () => checkAnswer(btn, opt, q.a);
+                optContainer.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(btn, selected, correct) {
+            const btns = document.getElementById('optionsContainer').children;
+            for(let b of btns) b.disabled = true;
+
+            if (selected === correct) {
+                btn.classList.remove('border-white', 'bg-white');
+                btn.classList.add('bg-green-100', 'border-green-500', 'text-green-800');
+                btn.innerHTML += ' <i class="fas fa-check float-right mt-1"></i>';
+                document.getElementById('quizFeedback').innerText = "Correct! 答對了!";
+                document.getElementById('quizFeedback').classList.add("text-green-600");
+                currentScore += 10;
+            } else {
+                btn.classList.remove('border-white', 'bg-white');
+                btn.classList.add('bg-red-100', 'border-red-500', 'text-red-800');
+                btn.innerHTML += ' <i class="fas fa-times float-right mt-1"></i>';
+                document.getElementById('quizFeedback').innerText = `Wrong! 答案是: ${correct}`;
+                document.getElementById('quizFeedback').classList.add("text-red-600");
+                
+                // Highlight correct
+                for(let b of btns) {
+                    if (b.innerText === correct) {
+                        b.classList.remove('border-white', 'bg-white');
+                        b.classList.add('bg-green-50', 'border-green-300');
+                    }
+                }
+            }
+
+            setTimeout(() => {
+                quizState.currentIndex++;
+                renderQuestion();
+            }, 2000);
+        }
+
+        // --- 6. 結算與 Firebase 排行榜 ---
+
+        async function endGame() {
+            switchScreen('result');
+            document.getElementById('finalScore').innerText = currentScore;
+            
+            // 上傳成績
+            if (db && auth && auth.currentUser) {
+                try {
+                    const { collection, addDoc } = window.firebaseModules;
+                    // FIX: 使用正確的 appId 路徑
+                    const leaderboardRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+                    
+                    await addDoc(leaderboardRef, {
+                        class: currentUser.class,
+                        name: currentUser.name,
+                        studentId: currentUser.id,
+                        mode: getModeName(currentMode),
+                        score: currentScore,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (e) {
+                    console.error("Error adding score: ", e);
+                }
+            }
+
+            // 顯示排行榜
+            subscribeLeaderboard();
+        }
+        
+        // 直接查看排行榜
+        function showLeaderboard() {
+            switchScreen('result');
+            document.getElementById('finalScore').innerText = "-";
+            subscribeLeaderboard();
+        }
+
+        let unsubscribeLeaderboard = null;
+
+        function subscribeLeaderboard() {
+            if (!db) {
+                document.getElementById('leaderboardBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center">排行榜服務未連接</td></tr>';
+                return;
+            }
+
+            if (unsubscribeLeaderboard) unsubscribeLeaderboard(); // 取消舊訂閱
+
+            const { collection, query, orderBy, limit, onSnapshot } = window.firebaseModules;
+            // FIX: 使用正確的 appId 路徑
+            const q = query(
+                collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard'),
+                orderBy('score', 'desc'),
+                limit(50)
+            );
+
+            // 顯示 Loading
+            document.getElementById('leaderboardBody').innerHTML = '<tr><td colspan="5" class="p-8 text-center"><div class="loader mx-auto"></div></td></tr>';
+
+            unsubscribeLeaderboard = onSnapshot(q, (snapshot) => {
+                const tbody = document.getElementById('leaderboardBody');
+                tbody.innerHTML = "";
+                
+                let rank = 1;
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    let dateStr = data.timestamp ? new Date(data.timestamp).toLocaleDateString() : "";
+                    
+                    // Highlight current user
+                    let isMe = (data.studentId === currentUser.id && data.name === currentUser.name);
+                    let rowClass = isMe ? "bg-yellow-50 font-bold" : "hover:bg-gray-50";
+
+                    let tr = document.createElement('tr');
+                    tr.className = rowClass + " transition-colors";
+                    tr.innerHTML = `
+                        <td class="p-3 text-center text-gray-500">${rank++}</td>
+                        <td class="p-3">
+                            <span class="text-indigo-700">${data.name}</span> 
+                            <span class="text-xs text-gray-400">(${data.class})</span>
+                        </td>
+                        <td class="p-3 text-sm">
+                            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs border">${data.mode}</span>
+                        </td>
+                        <td class="p-3 text-right font-bold text-green-600">${data.score}</td>
+                        <td class="p-3 text-right text-xs text-gray-400 hidden sm:table-cell">${dateStr}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (snapshot.empty) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400">目前尚無紀錄，快來當第一名!</td></tr>';
+                }
+            }, (error) => {
+                console.error("Leaderboard error:", error);
+                document.getElementById('leaderboardBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-400">讀取失敗 (請確認網路或登入狀態)</td></tr>';
+            });
+        }
+
+        function getModeName(mode) {
+            if (mode === 'match') return '字彙配對';
+            if (mode === 'cloze') return '文意填空';
+            if (mode === 'quiz') return '綜合測驗';
+            return '未知';
+        }
+
+        // 匯出 Excel
+        function exportToExcel() {
+             // 簡單實作：抓取目前表格內容
+             let table = document.querySelector("table");
+             let rows = Array.from(table.querySelectorAll("tr"));
+             
+             let csvContent = "\uFEFF"; // BOM
+             
+             rows.forEach(row => {
+                 let cols = row.querySelectorAll("td, th");
+                 let rowData = [];
+                 cols.forEach(col => rowData.push(col.innerText.replace(/,/g, " "))); // 移除逗號避免CSV格式跑掉
+                 csvContent += rowData.join(",") + "\n";
+             });
+
+             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+             const link = document.createElement("a");
+             const url = URL.createObjectURL(blob);
+             link.setAttribute("href", url);
+             link.setAttribute("download", `觀光英語成績單_${new Date().toISOString().slice(0,10)}.csv`);
+             document.body.appendChild(link);
+             link.click();
+             document.body.removeChild(link);
+        }
+
+    </script>
+</body>
+</html>
